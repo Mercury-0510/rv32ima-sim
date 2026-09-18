@@ -1,4 +1,4 @@
-#include "core.h"
+#include "core_internal.h"
 #include "../utils/trace.h"
 
 void in_core_memory(INCore *core)

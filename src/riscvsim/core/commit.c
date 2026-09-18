@@ -1,6 +1,6 @@
-#include "core.h"
+#include "core_internal.h"
 #include "csr.h"
-#include "../riscvsim_cpu.h"
+#include "cpu_state.h"
 #include "../utils/trace.h"
 
 /* 异常在 WB 统一报告：较老指令已提交，年轻指令被冲刷。 */
@@ -72,10 +72,10 @@ int in_core_commit(INCore *core)
     if (l->writes_rd && l->rd)
         core->simcpu->regs[l->rd] = l->result;
     core->simcpu->regs[0] = 0;
-    core->retired++;
+    core->stats.retired++;
     core->simcpu->instret++;
     trace_commit(core, 0);
-    if (core->stop_pc_valid && l->pc == core->stop_pc) {
+    if (core->config.stop_pc_valid && l->pc == core->config.stop_pc) {
         core->halted = 1;
         return 1;
     }

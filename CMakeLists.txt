@@ -2,29 +2,24 @@ cmake_minimum_required(VERSION 3.16)
 
 project(rv32ima-sim LANGUAGES C)
 
-set(MARSS_SOURCE_DIR "" CACHE PATH "MARSS src directory containing iomem.c (optional)")
-add_library(sim_memory src/riscvsim/system/memory.c)
-set_target_properties(sim_memory PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED YES C_EXTENSIONS NO)
-if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(sim_memory PRIVATE -Wall -Wextra -Werror)
-endif()
-if(MARSS_SOURCE_DIR)
-    foreach(file iomem.c cutils.c iomem.h cutils.h)
-        if(NOT EXISTS "${MARSS_SOURCE_DIR}/${file}")
-            message(FATAL_ERROR "Missing MARSS source: ${MARSS_SOURCE_DIR}/${file}")
-        endif()
-    endforeach()
-    add_library(marss_iomem STATIC "${MARSS_SOURCE_DIR}/iomem.c" "${MARSS_SOURCE_DIR}/cutils.c")
-    target_include_directories(sim_memory PRIVATE "${MARSS_SOURCE_DIR}")
-    target_compile_definitions(sim_memory PRIVATE SIM_WITH_MARSS=1)
-    target_link_libraries(sim_memory PUBLIC marss_iomem)
-endif()
-
 # 为编辑器提供编译参数。
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-add_executable(sim
-    src/riscvsim/riscvsim_cpu.c
+function(configure_sim_target target)
+    set_target_properties(${target} PROPERTIES
+        C_STANDARD 11 C_STANDARD_REQUIRED YES C_EXTENSIONS NO)
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Werror)
+    endif()
+endfunction()
+
+add_library(sim_memory STATIC
+    src/riscvsim/system/memory.c
+    src/riscvsim/system/loader.c
+)
+configure_sim_target(sim_memory)
+
+add_library(rv32_core STATIC
     src/riscvsim/core/core.c
     src/riscvsim/core/fetch.c
     src/riscvsim/core/memory.c
@@ -35,85 +30,45 @@ add_executable(sim
     src/riscvsim/core/csr.c
     src/riscvsim/utils/trace.c
 )
-target_link_libraries(sim PRIVATE sim_memory)
+target_include_directories(rv32_core PUBLIC src/riscvsim)
+configure_sim_target(rv32_core)
 
-set_target_properties(sim PROPERTIES
-    C_STANDARD 11
-    C_STANDARD_REQUIRED YES
-    C_EXTENSIONS NO
-)
-
-if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(sim PRIVATE -Wall -Wextra -Werror)
-endif()
+add_executable(sim src/riscvsim/main.c)
+target_link_libraries(sim PRIVATE rv32_core sim_memory)
+configure_sim_target(sim)
 
 include(CTest)
 if(BUILD_TESTING)
-    add_executable(rv32i_test
-        tests/rv32i_test.c
-        src/riscvsim/core/core.c
-        src/riscvsim/core/fetch.c
-        src/riscvsim/core/memory.c
-        src/riscvsim/core/commit.c
-        src/riscvsim/core/atomic.c
-        src/riscvsim/core/decode.c
-        src/riscvsim/core/execute.c
-        src/riscvsim/core/csr.c
-        src/riscvsim/utils/trace.c
-    )
-    target_include_directories(rv32i_test PRIVATE src/riscvsim)
-    set_target_properties(rv32i_test PROPERTIES
-        C_STANDARD 11 C_STANDARD_REQUIRED YES C_EXTENSIONS NO)
-    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-        target_compile_options(rv32i_test PRIVATE -Wall -Wextra -Werror)
-    endif()
-    add_test(NAME rv32i COMMAND rv32i_test)
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    foreach(test rv32i rv32a csr)
+        add_executable(test_${test} tests/test_${test}.c)
+        target_link_libraries(test_${test} PRIVATE rv32_core)
+        configure_sim_target(test_${test})
+    endforeach()
 
-    add_executable(rv32a_test
-        tests/rv32a_test.c
-        src/riscvsim/core/core.c
-        src/riscvsim/core/fetch.c
-        src/riscvsim/core/memory.c
-        src/riscvsim/core/commit.c
-        src/riscvsim/core/atomic.c
-        src/riscvsim/core/decode.c
-        src/riscvsim/core/execute.c
-        src/riscvsim/core/csr.c
-        src/riscvsim/utils/trace.c)
-    target_include_directories(rv32a_test PRIVATE src/riscvsim)
-    set_target_properties(rv32a_test PROPERTIES
-        C_STANDARD 11 C_STANDARD_REQUIRED YES C_EXTENSIONS NO)
-    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-        target_compile_options(rv32a_test PRIVATE -Wall -Wextra -Werror)
-    endif()
-    add_test(NAME rv32a COMMAND rv32a_test)
-    add_test(NAME atomic_demo COMMAND sim)
+    add_executable(test_memory tests/test_memory.c)
+    target_link_libraries(test_memory PRIVATE sim_memory)
+    target_include_directories(test_memory PRIVATE src/riscvsim)
+    configure_sim_target(test_memory)
 
-    add_executable(csr_test
-        tests/csr_test.c
-        src/riscvsim/core/csr.c
-    )
-    target_include_directories(csr_test PRIVATE src/riscvsim)
-    set_target_properties(csr_test PROPERTIES
-        C_STANDARD 11 C_STANDARD_REQUIRED YES C_EXTENSIONS NO)
-    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-        target_compile_options(csr_test PRIVATE -Wall -Wextra -Werror)
-    endif()
-    add_test(NAME csr COMMAND csr_test)
+    add_test(NAME regression
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_tests.py
+                --sim $<TARGET_FILE:sim>
+                --rv32i $<TARGET_FILE:test_rv32i>
+                --rv32a $<TARGET_FILE:test_rv32a>
+                --csr $<TARGET_FILE:test_csr>
+                --memory $<TARGET_FILE:test_memory>)
 endif()
 
-if(BUILD_TESTING)
-    find_package(Python3 COMPONENTS Interpreter QUIET)
-    if(Python3_Interpreter_FOUND)
-        add_test(NAME trace_tools
-            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools_test.py)
-        add_test(NAME loader_trace
-            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/loader_trace_test.py
-                    $<TARGET_FILE:sim> $<BOOL:${MARSS_SOURCE_DIR}>)
-        add_test(NAME spike_trace_tools
-            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/spike_tools_test.py)
-        add_test(NAME csr_trace
-            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/csr_trace_test.py
-                    $<TARGET_FILE:sim>)
-    endif()
+find_program(CLANG_FORMAT_EXECUTABLE NAMES clang-format)
+if(CLANG_FORMAT_EXECUTABLE)
+    file(GLOB_RECURSE FORMAT_SOURCES CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/riscvsim/*.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/riscvsim/*.h"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.h")
+    add_custom_target(fmt
+        COMMAND ${CLANG_FORMAT_EXECUTABLE} -i ${FORMAT_SOURCES}
+        COMMENT "Formatting project C sources"
+        VERBATIM)
 endif()

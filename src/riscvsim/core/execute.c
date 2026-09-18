@@ -1,4 +1,4 @@
-#include "core.h"
+#include "core_internal.h"
 #include "../utils/trace.h"
 
 /* 转换符号位后做无符号比较，避免宿主机有符号溢出。 */
@@ -116,7 +116,7 @@ void in_core_execute(INCore *core)
             if (!l->m_result_ready)
             {
                 l->result = execute_m(f3, a, b);
-                l->ex_cycles_left = f3 < 4 ? core->mul_cycles : core->div_cycles;
+                l->ex_cycles_left = f3 < 4 ? core->config.mul_cycles : core->config.div_cycles;
                 l->m_result_ready = 1;
             }
             if (l->ex_cycles_left > 1)
@@ -125,7 +125,7 @@ void in_core_execute(INCore *core)
                 core->next_execute = core->next_memory;
                 core->next_memory = (CPUStage){0};
                 core->execute_stalled = 1;
-                core->execute_stalls++;
+                core->stats.execute_stalls++;
                 return;
             }
             l->ex_cycles_left = 0;
@@ -176,7 +176,7 @@ void in_core_execute(INCore *core)
             core->fetch_pc = target;
             core->fetch_done = 0;
             core->redirected = 1;
-            core->flushes++;
+            core->stats.flushes++;
         }
     }
 }

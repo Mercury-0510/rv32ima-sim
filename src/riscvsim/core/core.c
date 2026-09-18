@@ -1,48 +1,55 @@
-#include "core.h"
+#include "core_internal.h"
 #include "csr.h"
-#include "../riscvsim_cpu.h"
+#include "cpu_state.h"
 #include "../utils/trace.h"
 #include <string.h>
 
-void in_core_init(INCore *core, RISCVSIMCPUState *cpu,
-                  const uint32_t *program, size_t count, uint32_t base,
-                  uint8_t *data, size_t data_size)
+CoreConfig in_core_default_config(void)
+{
+    return (CoreConfig){.mul_cycles = 3, .div_cycles = 32};
+}
+
+void in_core_init(INCore *core, RISCVSIMCPUState *cpu, const CoreSetup *setup)
 {
     memset(core, 0, sizeof(*core));
     memset(cpu, 0, sizeof(*cpu));
     cpu->priv = PRIV_M; /* 复位后运行在 M 模式 */
     core->simcpu = cpu;
-    core->program = program;
-    core->program_size = count;
-    core->program_base = core->fetch_pc = base;
-    core->data = data;
-    core->data_size = data_size;
-    core->fetch_done = count == 0;
-    core->mul_cycles = 3;  /* 人为规定 */
-    core->div_cycles = 32; /* 人为规定*/
+    core->program = setup->program;
+    core->program_size = setup->count;
+    core->program_base = setup->base;
+    core->fetch_pc = setup->entry;
+    core->data = setup->data;
+    core->data_size = setup->data_size;
+    core->bus = setup->bus;
+    core->commit_trace = setup->commit_trace;
+    core->trace = setup->stage_trace;
+    core->config = setup->config;
+    core->fetch_done = setup->count == 0;
 }
 
 int in_core_set_m_latency(INCore *core, unsigned mul_cycles, unsigned div_cycles)
 {
     if (!mul_cycles || !div_cycles || core->simcpu->clock != 0)
         return 0;
-    core->mul_cycles = mul_cycles;
-    core->div_cycles = div_cycles;
+    core->config.mul_cycles = mul_cycles;
+    core->config.div_cycles = div_cycles;
     return 1;
 }
 
-static int drained(const INCore *core)
+int in_core_finished(const INCore *core)
 {
-    return core->fetch_done &&
-           !core->decode.has_data &&
-           !core->execute.has_data &&
-           !core->memory.has_data &&
-           !core->commit.has_data;
+    return core->halted ||
+           (core->fetch_done &&
+            !core->decode.has_data &&
+            !core->execute.has_data &&
+            !core->memory.has_data &&
+            !core->commit.has_data);
 }
 
 void in_core_run(INCore *core, uint64_t cycles)
 {
-    if (core->halted || drained(core))
+    if (in_core_finished(core))
         return;
 
     for (uint64_t i = 0; i < cycles; ++i)
@@ -90,5 +97,5 @@ int in_core_run_5_stage(INCore *core)
     core->execute = core->next_execute;
     core->memory = core->next_memory;
     core->commit = core->next_commit;
-    return core->halted || drained(core);
+    return in_core_finished(core);
 }

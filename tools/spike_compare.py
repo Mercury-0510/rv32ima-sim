@@ -134,21 +134,21 @@ def main():
     parser.add_argument('--spike', type=Path, default=Path(shutil.which('spike') or CPU / 'build/spike/spike'))
     parser.add_argument('--out', type=Path, default=ROOT / 'out/spike-compare')
     parser.add_argument('--cross', default='riscv64-unknown-elf-')
-    parser.add_argument('--backend', choices=['flat', 'marss'], default='flat')
     args = parser.parse_args()
     sim, spike, out = args.sim.resolve(), args.spike.resolve(), args.out.resolve()
     for executable in (sim, spike):
         if not executable.is_file():
-            parser.error(f'executable missing: {executable}; see docs/SPIKE.md')
+            parser.error(f'executable missing: {executable}; see docs/spike-diff.md')
     out.mkdir(parents=True, exist_ok=True)
-    elf, binary = out / 'smoke.elf', out / 'smoke.bin'
+    # 模拟器直接装载 ELF 并按符号名停机，无需再转出裸二进制。
+    elf = out / 'smoke.elf'
     run([args.cross + 'gcc', '-march=rv32im', '-mabi=ilp32', '-nostdlib', '-nostartfiles',
          '-Wl,--no-relax', '-T', ROOT / 'programs/link.ld', ROOT / 'programs/diff_smoke.S', '-o', elf])
-    run([args.cross + 'objcopy', '-O', 'binary', elf, binary])
+    # nm 仍用于校验 Spike 侧轨迹确实停在 test_done。
     symbols = run([args.cross + 'nm', elf], capture_output=True, text=True).stdout
     stop = next(int(line.split()[0], 16) for line in symbols.splitlines() if line.split()[-1] == 'test_done')
     dut_file = out / 'dut.jsonl'
-    run([sim, '--bin', binary, '--trace-json', dut_file, '--backend', args.backend, '--stop-pc', hex(stop)])
+    run([sim, elf, '--trace-json', dut_file, '--stop-pc', 'test_done'])
     dut = [json.loads(line) for line in dut_file.read_text().splitlines()]
 
     env = os.environ.copy()
@@ -176,7 +176,7 @@ def main():
     else:
         raise ValueError('negative test did not detect wrong writeback')
     (out / 'run.json').write_text(json.dumps(dict(reference='Spike', command=[str(x) for x in argv],
-        sim=str(sim), backend=args.backend, commits=len(dut), result='PASS'), indent=2) + '\n')
+        sim=str(sim), commits=len(dut), result='PASS'), indent=2) + '\n')
     print(f'SPIKE DIFFTEST PASS: {len(dut)} retirement events matched')
     print('Compared PC, instruction, register writeback, load address, memory writes; negative check PASS')
     print(f'Artifacts: {out}')

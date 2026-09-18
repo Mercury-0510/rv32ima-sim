@@ -1,5 +1,5 @@
-#include "core.h"
-#include "../riscvsim_cpu.h"
+#include "core_internal.h"
+#include "cpu_state.h"
 #include <assert.h>
 
 void in_core_invalidate_reservation(INCore *core, uint32_t address, unsigned width)
@@ -117,5 +117,5 @@ void in_core_atomic_memory(INCore *core)
     }
     core->next_memory = out;
     core->memory_stalled = 1;
-    core->memory_stalls++;
+    core->stats.memory_stalls++;
 }
