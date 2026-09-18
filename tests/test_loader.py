@@ -1,5 +1,6 @@
 """ELF 装载：格式校验、符号解析，以及预编译示例镜像的端到端结果。"""
 from pathlib import Path
+import shutil
 import struct
 import subprocess
 import sys
@@ -182,13 +183,17 @@ class PrebuiltImageTests(unittest.TestCase):
 
     def test_elf_and_raw_paths_agree(self):
         """同一程序走 ELF 与裸镜像两条装载路径，周期和退休数必须相同。"""
+        objcopy = (shutil.which("riscv64-unknown-elf-objcopy")
+                   or shutil.which("llvm-objcopy")
+                   or shutil.which("objcopy"))
+        if objcopy is None:
+            self.skipTest("objcopy unavailable for raw comparison")
         with tempfile.TemporaryDirectory() as d:
             raw = Path(d) / "smoke.bin"
-            result = subprocess.run(
-                ["riscv64-unknown-elf-objcopy", "-O", "binary", str(SMOKE), str(raw)],
-                capture_output=True)
+            result = subprocess.run([objcopy, "-O", "binary", str(SMOKE), str(raw)],
+                                    capture_output=True)
             if result.returncode:
-                self.skipTest("cross toolchain unavailable for raw comparison")
+                self.skipTest("objcopy failed for raw comparison")
             elf_run = subprocess.run([str(SIM), str(SMOKE), "--stop-pc", "test_done"],
                                      capture_output=True, text=True, timeout=5)
             raw_run = subprocess.run([str(SIM), str(raw), "--stop-pc", "0x8000007c"],
