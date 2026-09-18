@@ -444,7 +444,7 @@ int main(int argc, char **argv)
 
     Image image = {0};
     SimMemory memory = {0};
-    CoreConfig config = in_core_default_config();
+    CoreConfig config = {0}; /* 零值即不停机；resolve_stop 只在给出 --stop-pc 时改写。 */
     int status = load_image(cfg.image, &image);
     if (!status)
         status = image.is_elf ? load_elf(&cfg, &image, &memory)

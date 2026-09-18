@@ -53,6 +53,6 @@ ELF 的地址全部取自文件。所有 `PT_LOAD` 段按 `p_vaddr` 写入 RAM�
 
 ## 验证
 
-`tests/test_memory.c` 直接检查总线权限、地址边界和无副作用探测。`tests/test_integration.py` 统一检查裸镜像装载、退出状态、RAM/MMIO 访问，以及普通指令和 CSR 的提交与异常。`tests/test_loader.py` 检查 ELF 的格式校验与符号解析、仓库自带镜像的端到端结果，并交叉对照 ELF 与裸镜像两条装载路径。
+`tests/test_memory.c` 直接检查总线权限、地址边界和无副作用探测。`tests/test_commit.c` 在进程内捕获提交轨迹，逐字段检查 JSONL 的序列化契约，以及设备访问在流水线上的表现。`tests/test_loader.c` 直接调用装载器接口，检查畸形 ELF 的拒绝、段落位与 `.bss` 清零、符号解析。`tests/test_cli.c` 起子进程检查命令行契约：`--stop-pc` 的符号解析、超时退出码与轨迹别名保护。
 
-完整回归统一通过 [README](../README.md) 中的 `regression` 入口运行。真实 Spike 对照需另行运行，依赖和方法见 [Spike 差分验证](spike-diff.md)。
+完整回归通过 [README](../README.md) 中的 `ctest` 运行。真实 Spike 对照需另行运行，依赖和方法见 [Spike 差分验证](spike-diff.md)。

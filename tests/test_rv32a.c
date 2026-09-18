@@ -1,27 +1,18 @@
+#include "test_util.h"
 #include "core/core.h"
 #include "core/cpu_state.h"
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
-#define CHECK(x) do { if (!(x)) { fprintf(stderr, "%s:%d: %s\n", __FILE__, __LINE__, #x); exit(1); } } while (0)
-#define BASE UINT32_C(0x80000000)
 static INCore core;
 static RISCVSIMCPUState cpu;
 static uint8_t ram[64];
 static unsigned cases;
 
-static uint32_t amo(unsigned f5, unsigned rd, unsigned rs1, unsigned rs2, unsigned order)
-{
-    return f5 << 27 | order << 25 | rs2 << 20 | rs1 << 15 | 2u << 12 | rd << 7 | 0x2f;
-}
-
 static void setup(const uint32_t *program, size_t count)
 {
     memset(ram, 0, sizeof(ram));
     CoreSetup core_setup = {.program = program, .count = count, .data = ram,
-                            .data_size = sizeof(ram), .base = BASE, .entry = BASE,
-                            .config = in_core_default_config()};
+                            .data_size = sizeof(ram), .base = BASE, .entry = BASE};
     in_core_init(&core, &cpu, &core_setup);
     cpu.regs[1] = 16;
     cpu.regs[2] = 20;
@@ -132,12 +123,6 @@ static void test_amo_pipeline(void)
     CHECK(cpu.regs[3] == 20 && cpu.regs[4] == 40);
     CHECK(cpu.regs[5] == 40 && cpu.regs[6] == 60 && word(16) == 20);
     CHECK(core.stats.memory_stalls == 6 && core.stats.stalls == 0 && cpu.clock == 15);
-}
-
-static uint32_t store(unsigned width_f3, unsigned rs2, unsigned rs1, unsigned offset)
-{
-    return (offset >> 5) << 25 | rs2 << 20 | rs1 << 15 | width_f3 << 12 |
-           (offset & 31) << 7 | 0x23;
 }
 
 static void test_lr_sc(void)

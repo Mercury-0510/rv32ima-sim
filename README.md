@@ -29,10 +29,10 @@ cmake --build build -j
 
 ```bash
 ./build/sim programs/diff_smoke.elf --stop-pc test_done
-ctest --test-dir build -R '^regression$' --output-on-failure
+ctest --test-dir build --output-on-failure
 ```
 
-正常结束时统计信息包含 `retired=33 status=complete`。`--stop-pc` 接受符号名或数字地址；`test_done` 之后是外部环境的退出序列和等待循环，必须让它退休后停止。`regression` 是唯一的 CTest 入口，任一检查失败则整体失败。镜像源码见 [programs/diff_smoke.S](programs/diff_smoke.S)，改动后用 `make -C programs` 重建并一并提交。
+正常结束时统计信息包含 `retired=33 status=complete`。`--stop-pc` 接受符号名或数字地址；`test_done` 之后是外部环境的退出序列和等待循环，必须让它退休后停止。`ctest -N` 可列出全部测试，任一失败则整体失败。镜像源码见 [programs/diff_smoke.S](programs/diff_smoke.S)，改动后用 `make -C programs` 重建并一并提交。
 
 ### 查看流水轨迹
 
@@ -55,7 +55,7 @@ src/riscvsim/
     system/          RAM 与 MMIO 地址映射
     utils/           阶段日志与提交轨迹
 programs/            汇编测试程序、链接脚本与预编译镜像
-tests/              指令、流水时序和 Python 工具测试
+tests/              C 测试：指令、流水时序、装载与命令行契约；工具测试为 Python
 tools/              轨迹转换、HTML 展示与 Spike 差分
 docs/               使用说明、设计与后续计划
 CMakeLists.txt       构建与测试入口
@@ -68,6 +68,7 @@ CMakeLists.txt       构建与测试入口
 ## 文档
 
 - [程序装载与提交轨迹](docs/loader-trace.md)：外部镜像、总线接口和内存映射。
+- [测试](docs/testing.md)：每个测试覆盖什么，以及如何新增。
 - [轨迹工具](tools/README.md)：日志转换、比较与可视化。
 - [Spike 差分验证](docs/spike-diff.md)：依赖、运行方法和验证范围。
 - [乘除单元](docs/multiply-divide.md)、[原子访存](docs/atomic-pipeline.md)：执行时序与设计边界。

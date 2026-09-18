@@ -4,11 +4,6 @@
 #include "../utils/trace.h"
 #include <string.h>
 
-CoreConfig in_core_default_config(void)
-{
-    return (CoreConfig){.mul_cycles = 3, .div_cycles = 32};
-}
-
 void in_core_init(INCore *core, RISCVSIMCPUState *cpu, const CoreSetup *setup)
 {
     memset(core, 0, sizeof(*core));
@@ -26,15 +21,6 @@ void in_core_init(INCore *core, RISCVSIMCPUState *cpu, const CoreSetup *setup)
     core->trace = setup->stage_trace;
     core->config = setup->config;
     core->fetch_done = setup->count == 0;
-}
-
-int in_core_set_m_latency(INCore *core, unsigned mul_cycles, unsigned div_cycles)
-{
-    if (!mul_cycles || !div_cycles || core->simcpu->clock != 0)
-        return 0;
-    core->config.mul_cycles = mul_cycles;
-    core->config.div_cycles = div_cycles;
-    return 1;
 }
 
 int in_core_finished(const INCore *core)

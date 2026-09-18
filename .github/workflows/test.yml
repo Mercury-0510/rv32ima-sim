@@ -20,7 +20,7 @@ jobs:
       - name: Build
         run: cmake --build build --parallel
       - name: Test
-        run: ctest --test-dir build -R '^regression$' --output-on-failure
+        run: ctest --test-dir build --output-on-failure
       # 逐字执行 README 里的示例命令，确保文档中的用法始终可用。
       # 也顺带检出 programs/diff_smoke.elf 是否与 diff_smoke.S 脱节。
       - name: Run the documented example

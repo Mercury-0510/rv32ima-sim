@@ -1,4 +1,5 @@
-cmake_minimum_required(VERSION 3.16)
+# 3.20 是下限而不是 3.16：文档与 CI 都用 ctest --test-dir，该选项 3.20 才引入。
+cmake_minimum_required(VERSION 3.20)
 
 project(rv32ima-sim LANGUAGES C)
 
@@ -51,13 +52,34 @@ if(BUILD_TESTING)
     target_include_directories(test_memory PRIVATE src/riscvsim)
     configure_sim_target(test_memory)
 
-    add_test(NAME regression
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_tests.py
-                --sim $<TARGET_FILE:sim>
-                --rv32i $<TARGET_FILE:test_rv32i>
-                --rv32a $<TARGET_FILE:test_rv32a>
-                --csr $<TARGET_FILE:test_csr>
-                --memory $<TARGET_FILE:test_memory>)
+    add_executable(test_commit tests/test_commit.c)
+    target_link_libraries(test_commit PRIVATE rv32_core sim_memory)
+    target_include_directories(test_commit PRIVATE src/riscvsim)
+    configure_sim_target(test_commit)
+
+    add_executable(test_loader tests/test_loader.c)
+    target_link_libraries(test_loader PRIVATE sim_memory)
+    target_include_directories(test_loader PRIVATE src/riscvsim)
+    configure_sim_target(test_loader)
+
+    # test_cli 只调用系统接口：它测的是 sim 的进程契约，不包含项目头。
+    add_executable(test_cli tests/test_cli.c)
+    add_dependencies(test_cli sim)
+    configure_sim_target(test_cli)
+
+    # 每个测试二进制自带断言与用例计数，CTest 只看退出码。
+    foreach(test rv32i rv32a csr memory commit loader)
+        add_test(NAME ${test} COMMAND test_${test})
+    endforeach()
+    add_test(NAME cli COMMAND test_cli $<TARGET_FILE:sim>
+                            ${CMAKE_CURRENT_SOURCE_DIR}/programs/diff_smoke.elf)
+    add_test(NAME tools_trace COMMAND ${Python3_EXECUTABLE}
+                                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_trace_tools.py)
+    add_test(NAME tools_spike COMMAND ${Python3_EXECUTABLE}
+                                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_spike_tools.py)
+    # 起子进程的用例万一挂住，要在 60 秒内失败，而不是拖到 CTest 的默认超时。
+    set_tests_properties(rv32i rv32a csr memory commit loader cli tools_trace tools_spike
+        PROPERTIES TIMEOUT 60)
 endif()
 
 find_program(CLANG_FORMAT_EXECUTABLE NAMES clang-format)

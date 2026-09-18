@@ -1,9 +1,6 @@
+#include "test_util.h"
 #include "core/csr.h"
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-
-#define CHECK(x) do { if (!(x)) { fprintf(stderr, "%s:%d: %s\n", __FILE__, __LINE__, #x); exit(1); } } while (0)
 
 static RISCVSIMCPUState cpu;
 static unsigned cases;

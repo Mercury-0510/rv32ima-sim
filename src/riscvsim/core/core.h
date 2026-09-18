@@ -17,10 +17,14 @@ typedef struct SimBus {
     int (*write)(void *, uint32_t, unsigned, uint32_t);
 } SimBus;
 
-/* 初始化后、运行前设置；乘除延迟通过 in_core_set_m_latency 校验。 */
+/* M 扩展功能单元的 EX 总延迟（拍）。非流水化单 EX 槽模型，不是 ISA 要求，
+ * 也不代表真实电路的测量值；除零和有符号除法溢出使用相同延迟。 */
+#define M_EX_MUL_CYCLES 3
+#define M_EX_DIV_CYCLES 32
+
+/* 停机条件。零值就是默认值：不停机。 */
 typedef struct CoreConfig
 {
-    unsigned mul_cycles, div_cycles; /* EX 总延迟，至少 1 拍。 */
     uint32_t stop_pc;
     int stop_pc_valid; /* 指定 PC 的指令退休后停止。 */
 } CoreConfig;
@@ -39,12 +43,9 @@ typedef struct CoreSetup
     SimBus bus;
     FILE *commit_trace;
     int stage_trace;
-    /* 运行参数，用 in_core_default_config 起手再覆盖需要的字段。 */
+    /* 运行参数；留空即零值，表示不停机。 */
     CoreConfig config;
 } CoreSetup;
-
-/* 默认运行参数。调用方在此基础上改写 stop_pc 等字段，避免依赖"零值即默认"。 */
-CoreConfig in_core_default_config(void);
 
 /* 由核心维护，调用方只读取；各类停顿分别计数。 */
 typedef struct CoreStats
@@ -100,8 +101,6 @@ int in_core_finished(const INCore *core);
 
 /* Run at most cycles ticks; a stop request still counts the current tick. */
 void in_core_run(INCore *core, uint64_t cycles);
-/* 只允许在初始化后、运行前配置非零 EX 延迟；成功返回 1。 */
-int in_core_set_m_latency(INCore *core, unsigned mul_cycles, unsigned div_cycles);
 int in_core_run_5_stage(INCore *core);
 
 #endif

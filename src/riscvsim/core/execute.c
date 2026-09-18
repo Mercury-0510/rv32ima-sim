@@ -116,7 +116,7 @@ void in_core_execute(INCore *core)
             if (!l->m_result_ready)
             {
                 l->result = execute_m(f3, a, b);
-                l->ex_cycles_left = f3 < 4 ? core->config.mul_cycles : core->config.div_cycles;
+                l->ex_cycles_left = f3 < 4 ? M_EX_MUL_CYCLES : M_EX_DIV_CYCLES;
                 l->m_result_ready = 1;
             }
             if (l->ex_cycles_left > 1)

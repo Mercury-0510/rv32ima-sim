@@ -1,4 +1,5 @@
-# Local reference source
+# 本地参考源码：上游 MARSS 检出，平时查阅用，构建与测试都不读取。
+# 它不是历史残留，不要删除；本项目不依赖它，见 docs/spike-diff.md。
 /marss-riscv/
 
 # Build artifacts and generated traces

@@ -1,46 +1,18 @@
+#include "test_util.h"
 #include "core/core.h"
 #include "core/cpu_state.h"
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
-#define CHECK(x) do { if (!(x)) { fprintf(stderr, "%s:%d: %s\n", __FILE__, __LINE__, #x); exit(1); } } while (0)
-#define BASE UINT32_C(0x80000000)
 static INCore core;
 static RISCVSIMCPUState cpu;
 static uint8_t ram[64];
 static unsigned cases;
-static uint32_t imm(unsigned op, unsigned rd, unsigned f, unsigned rs, int value)
-{
-    return ((uint32_t)value & 4095) << 20 | rs << 15 | f << 12 | rd << 7 | op;
-}
-static uint32_t reg(unsigned f, unsigned f7)
-{
-    return f7 << 25 | 2u << 20 | 1u << 15 | f << 12 | 3u << 7 | 0x33;
-}
-static uint32_t store(unsigned f, unsigned rs, unsigned base, int offset)
-{
-    uint32_t v = (uint32_t)offset & 4095;
-    return (v >> 5) << 25 | rs << 20 | base << 15 | f << 12 | (v & 31) << 7 | 0x23;
-}
-static uint32_t branch(unsigned f, int offset)
-{
-    uint32_t v = (uint32_t)offset & 8191;
-    return (v >> 12) << 31 | ((v >> 5) & 63) << 25 | 2u << 20 | 1u << 15 |
-           f << 12 | ((v >> 1) & 15) << 8 | ((v >> 11) & 1) << 7 | 0x63;
-}
-static uint32_t jal(unsigned rd, int offset)
-{
-    uint32_t v = (uint32_t)offset & 0x1fffff;
-    return (v >> 20) << 31 | ((v >> 1) & 1023) << 21 |
-           ((v >> 11) & 1) << 20 | ((v >> 12) & 255) << 12 | rd << 7 | 0x6f;
-}
+
 static void setup(const uint32_t *p, size_t n)
 {
     memset(ram, 0, sizeof(ram));
     CoreSetup core_setup = {.program = p, .count = n, .data = ram,
-                            .data_size = sizeof(ram), .base = BASE, .entry = BASE,
-                            .config = in_core_default_config()};
+                            .data_size = sizeof(ram), .base = BASE, .entry = BASE};
     in_core_init(&core, &cpu, &core_setup);
     cases++;
 }
@@ -51,7 +23,7 @@ static void alu(uint32_t insn, uint32_t a, uint32_t b, uint32_t expected)
     cpu.regs[1] = a; cpu.regs[2] = b;
     run();
     unsigned latency = (insn & 0x7f) == 0x33 && (insn >> 25) == 1
-                           ? (((insn >> 12) & 7) < 4 ? 3 : 32) : 1;
+                           ? (((insn >> 12) & 7) < 4 ? M_EX_MUL_CYCLES : M_EX_DIV_CYCLES) : 1;
     CHECK(!cpu.trapped && core.stats.retired == 1 && cpu.clock == latency + 4);
     CHECK(core.stats.execute_stalls == latency - 1);
     CHECK(cpu.regs[3] == expected && cpu.regs[0] == 0);
@@ -297,47 +269,42 @@ static void test_faults(void)
 }
 static void test_m_timing(void)
 {
-    const unsigned latencies[] = {1, 2, 5, 32};
+    /* 延迟是编译期常量：MUL 与 DIV 各跑一遍自己的固定档位。 */
+    CHECK(M_EX_MUL_CYCLES == 3 && M_EX_DIV_CYCLES == 32);
+    const unsigned latencies[] = {M_EX_MUL_CYCLES, M_EX_DIV_CYCLES};
     for (unsigned kind = 0; kind < 2; ++kind)
-        for (unsigned k = 0; k < 4; ++k)
+    {
+        unsigned latency = latencies[kind];
+        uint32_t p[] = {reg(kind ? 4 : 0, 1), imm(0x13,4,0,0,7), imm(0x13,5,0,0,9)};
+        setup(p, 3);
+        cpu.regs[1] = 21; cpu.regs[2] = 4;
+        in_core_run(&core, 2); /* M 在 EX，后继在 ID。 */
+        uint32_t fetch_pc = core.fetch_pc;
+        for (unsigned wait = 0; wait + 1 < latency; ++wait)
         {
-            unsigned latency = latencies[k];
-            uint32_t p[] = {reg(kind ? 4 : 0, 1), imm(0x13,4,0,0,7), imm(0x13,5,0,0,9)};
-            setup(p, 3);
-            CHECK(!in_core_set_m_latency(&core, 0, 3));
-            CHECK(!in_core_set_m_latency(&core, 3, 0));
-            CHECK(core.config.mul_cycles == 3 && core.config.div_cycles == 32);
-            CHECK(in_core_set_m_latency(&core, latency, latency));
-            cpu.regs[1] = 21; cpu.regs[2] = 4;
-            in_core_run(&core, 2); /* M 在 EX，后继在 ID。 */
-            uint32_t fetch_pc = core.fetch_pc;
-            CHECK(!in_core_set_m_latency(&core, 1, 1));
-            for (unsigned wait = 0; wait + 1 < latency; ++wait)
-            {
-                in_core_run(&core, 1);
-                CHECK(core.execute_stalled && core.execute.has_data);
-                CHECK(core.decode.has_data && core.decode.latch.pc == BASE + 4);
-                CHECK(core.fetch_pc == fetch_pc && !core.memory.has_data);
-                CHECK(core.execute.latch.ex_cycles_left == latency - wait - 1);
-                CHECK(cpu.regs[3] == 0 && core.stats.retired == 0);
-            }
-            in_core_run(&core, 1); /* EX 结果就绪，但不能提前写 rd。 */
-            CHECK(!core.execute_stalled && core.memory.has_data && cpu.regs[3] == 0);
-            in_core_run(&core, 1); /* MEM */
+            in_core_run(&core, 1);
+            CHECK(core.execute_stalled && core.execute.has_data);
+            CHECK(core.decode.has_data && core.decode.latch.pc == BASE + 4);
+            CHECK(core.fetch_pc == fetch_pc && !core.memory.has_data);
+            CHECK(core.execute.latch.ex_cycles_left == latency - wait - 1);
             CHECK(cpu.regs[3] == 0 && core.stats.retired == 0);
-            in_core_run(&core, 1); /* WB */
-            CHECK(cpu.regs[3] == (kind ? 5u : 84u) && core.stats.retired == 1);
-            run();
-            CHECK(cpu.clock == latency + 6 && core.stats.retired == 3);
-            CHECK(core.stats.execute_stalls == latency - 1 && core.stats.stalls == 0);
-            CHECK(cpu.regs[4] == 7 && cpu.regs[5] == 9);
         }
+        in_core_run(&core, 1); /* EX 结果就绪，但不能提前写 rd。 */
+        CHECK(!core.execute_stalled && core.memory.has_data && cpu.regs[3] == 0);
+        in_core_run(&core, 1); /* MEM */
+        CHECK(cpu.regs[3] == 0 && core.stats.retired == 0);
+        in_core_run(&core, 1); /* WB */
+        CHECK(cpu.regs[3] == (kind ? 5u : 84u) && core.stats.retired == 1);
+        run();
+        CHECK(cpu.clock == latency + 6 && core.stats.retired == 3);
+        CHECK(core.stats.execute_stalls == latency - 1 && core.stats.stalls == 0);
+        CHECK(cpu.regs[4] == 7 && cpu.regs[5] == 9);
+    }
 
     /* MEM 反压优先：较老 AMO 的三拍期间，EX 中的 DIV 尚未启动。
      * 独立 DIV/MUL 也不重叠，单 EX 槽具有结构冒险。 */
     uint32_t mixed[] = {store(2,2,0,0), 0x002022af, reg(4,1), reg(0,1), imm(3,6,2,0,0)};
     setup(mixed, 5);
-    CHECK(in_core_set_m_latency(&core, 3, 7));
     cpu.regs[1] = 21; cpu.regs[2] = 4;
     in_core_run(&core, 4);
     CHECK(core.execute.latch.insn == reg(4,1));
@@ -349,18 +316,17 @@ static void test_m_timing(void)
         CHECK(core.stats.retired == 1); /* 较老 SW 只退休一次。 */
     }
     run();
-    CHECK(cpu.clock == 19 && core.stats.retired == 5 && core.stats.execute_stalls == 8);
+    CHECK(cpu.clock == 44 && core.stats.retired == 5 && core.stats.execute_stalls == 33);
     CHECK(core.stats.memory_stalls == 2 && core.stats.stalls == 0);
     CHECK(cpu.regs[3] == 84 && cpu.regs[5] == 4 && cpu.regs[6] == 8 && ram[0] == 8);
     uint64_t total = cpu.clock;
     for (uint64_t split = 0; split <= total; ++split)
     {
         setup(mixed, 5);
-        CHECK(in_core_set_m_latency(&core, 3, 7));
         cpu.regs[1] = 21; cpu.regs[2] = 4;
         in_core_run(&core, split);
         run();
-        CHECK(cpu.clock == total && core.stats.retired == 5 && core.stats.execute_stalls == 8);
+        CHECK(cpu.clock == total && core.stats.retired == 5 && core.stats.execute_stalls == 33);
         CHECK(cpu.regs[3] == 84 && cpu.regs[5] == 4 && cpu.regs[6] == 8 && ram[0] == 8);
     }
 
@@ -395,20 +361,19 @@ static void test_run_configuration(void)
 {
     uint32_t p[] = {reg(0, 1), store(2, 2, 0, 0), imm(0x13, 4, 0, 0, 9)};
     setup(p, 3);
-    CHECK(in_core_set_m_latency(&core, 2, 5));
     core.config.stop_pc = BASE;
     core.config.stop_pc_valid = 1;
     cpu.regs[1] = 21;
     cpu.regs[2] = 4;
     run();
     /* 停止 PC 在 WB 生效：M 指令已退休，年轻 store 不能写 RAM。 */
-    CHECK(core.halted && !cpu.trapped && cpu.clock == 6);
-    CHECK(core.stats.retired == 1 && core.stats.execute_stalls == 1);
+    CHECK(core.halted && !cpu.trapped && cpu.clock == 7);
+    CHECK(core.stats.retired == 1 && core.stats.execute_stalls == 2);
     CHECK(cpu.regs[3] == 84 && cpu.regs[4] == 0 && ram[0] == 0);
     run();
-    CHECK(cpu.clock == 6 && core.stats.retired == 1 && ram[0] == 0);
+    CHECK(cpu.clock == 7 && core.stats.retired == 1 && ram[0] == 0);
 
-    /* 复用同一核心时重新初始化，恢复默认延迟并清除停止条件和统计。 */
+    /* 复用同一核心时重新初始化，清除停止条件和统计。 */
     setup(p, 3);
     cpu.regs[1] = 21;
     cpu.regs[2] = 4;

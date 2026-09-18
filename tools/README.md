@@ -42,11 +42,13 @@ python3 tools/trace_diff.py --actual out/actual.log --expected out/reference.log
 使用 Spike 作为参考模型做架构状态差分：
 
 ```bash
-python3 tools/spike_compare.py --sim ./build/sim --spike /path/to/spike
+python3 tools/spike_compare.py
 ```
 
-脚本使用同一份 `programs/diff_smoke.S`：模拟器与 Spike 运行编译出的同一个 ELF，逐条比较
-33 条正常退休事件的 PC、指令、寄存器写回、load 地址与内存写，并在末尾做负向检查。
+脚本使用仓库提交的 `programs/diff_smoke.elf`：模拟器与 Spike 跑同一个 ELF，逐条比较正常
+退休事件的 PC、指令、寄存器写回、load 地址与内存写，并在末尾做负向检查。Spike 从 `PATH`
+查找，`--sim` 默认为 `build/sim`，两者都可用参数覆盖。脚本自己解析 ELF 符号表定位
+`test_done`/`tohost`，不需要交叉工具链；Spike 需要以 `--enable-commitlog` 构建。
 详见 [Spike 差分说明](../docs/spike-diff.md)。
 
 ## 数据格式
@@ -57,4 +59,4 @@ CSV 导出 PC/机器码为十六进制字符串，JSONL 导出为整数，两者
 不识别的日志行、重复的周期/阶段事件、无事件输入均报错；原始日志末尾的 `clock = ..., retired = ...` 汇总行允许存在。
 输出目录自动创建，同名输出文件会覆盖。
 
-工具测试包含在统一的 `regression` 入口中，运行命令见 [README](../README.md)。
+工具测试已注册到 CTest，运行命令见 [README](../README.md)。
