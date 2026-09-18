@@ -5,6 +5,12 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+/* ENABLE_TRACE 由 CMake 传入。本文件按约定不包含项目头（它只碰系统接口），
+ * 所以把默认值抄一遍，与 utils/trace.h 的回退值保持一致。 */
+#ifndef ENABLE_TRACE
+#define ENABLE_TRACE 1
+#endif
+
 #define ERR_CAP 4096
 
 static char *sim_path;
@@ -143,6 +149,30 @@ static void test_trace_alias_rejected(void)
     cases++;
 }
 
+#if !ENABLE_TRACE
+/* 关闭轨迹的构建里，两个开关都必须立刻报错并说明原因，而不是静默产生空轨迹。
+ * 顺带确认拒绝发生在 fopen 之前，不会留下一个空文件。 */
+static void test_trace_flags_rejected(void)
+{
+    char out[ERR_CAP], json[128];
+    char *stage[] = {sim_path, smoke_path, "--stage-trace", NULL};
+    CHECK(run_sim(stage, out, sizeof(out)) == 2);
+    CHECK(strstr(out, "--stage-trace") != NULL);
+    CHECK(strstr(out, "ENABLE_TRACE=ON") != NULL);
+
+    temp_path(json, sizeof(json), "never.json");
+    char *commit[] = {sim_path, smoke_path, "--trace-json", json, NULL};
+    CHECK(run_sim(commit, out, sizeof(out)) == 2);
+    CHECK(strstr(out, "--trace-json") != NULL);
+    CHECK(fopen(json, "rb") == NULL);
+
+    /* 不带轨迹开关的运行不受影响。 */
+    char *plain[] = {sim_path, smoke_path, "--stop-pc", "test_done", NULL};
+    CHECK(run_sim(plain, out, sizeof(out)) == 0);
+    cases++;
+}
+#endif
+
 /* 仓库自带的 programs/diff_smoke.elf 开箱可跑。程序在 halt 处自旋，因此
  * 「退出 0 且 retired=33」同时说明符号解析成功且停机生效。 */
 static void test_prebuilt_image(void)
@@ -166,11 +196,15 @@ int main(int argc, char **argv)
     test_stop_pc_symbol_failures();
     test_max_cycles_timeout();
     test_trace_alias_rejected();
+#if !ENABLE_TRACE
+    test_trace_flags_rejected();
+#endif
     test_prebuilt_image();
 
     remove_temp("raw.bin");
     remove_temp("image.bin");
     remove_temp("alias.json");
+    remove_temp("never.json");
     CHECK(rmdir(tmp_dir) == 0);
     printf("CLI: %u directed cases passed\n", cases);
     return 0;

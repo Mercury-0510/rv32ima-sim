@@ -9,6 +9,7 @@
 #include "core/core.h"
 #include "system/loader.h"
 #include "system/memory.h"
+#include "utils/trace.h" /* 取 ENABLE_TRACE：不包含它，#if !ENABLE_TRACE 会把未定义标识符当 0 */
 
 /* 进程退出码，与 --help 列出的一致。 */
 enum
@@ -33,6 +34,9 @@ static const char USAGE[] =
     "raw images load at --base, ELF images use the addresses they carry.\n"
     "SYMBOL is looked up in the ELF symbol table.\n"
     "Image end drains the pipeline; stop-pc stops AFTER retirement.\n"
+#if !ENABLE_TRACE
+    "This build has tracing disabled; --stage-trace and --trace-json are rejected.\n"
+#endif
     "Exit: 0 completed, 1 trap, 2 configuration/I/O error, 3 timeout.\n";
 
 /* 解析非负整数，接受十进制与 0x/0 前缀；空串、负号和尾随字符都算失败。 */
@@ -214,6 +218,18 @@ static ParseResult parse_options(int argc, char **argv, Config *cfg)
         fputs("trace output must differ from input image\n", stderr);
         return PARSE_ERROR;
     }
+
+#if !ENABLE_TRACE
+    /* 关闭轨迹的构建里两个开关都要报错，不能静默忽略——否则用户会以为轨迹
+       已经生成。位置在别名检查之后：那条检查与构建配置无关，措辞也被 test_cli
+       断言，不能被抢先生效。 */
+    if (cfg->stage_trace || cfg->trace)
+    {
+        fprintf(stderr, "%s is disabled in this build; reconfigure with -DENABLE_TRACE=ON\n",
+                cfg->stage_trace ? "--stage-trace" : "--trace-json");
+        return PARSE_ERROR;
+    }
+#endif
 
     return PARSE_OK;
 }

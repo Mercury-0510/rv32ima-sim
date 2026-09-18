@@ -20,6 +20,10 @@ add_library(sim_memory STATIC
 )
 configure_sim_target(sim_memory)
 
+# 轨迹功能（阶段日志与提交轨迹）的编译期总开关。关闭时两个 --trace 选项仍然
+# 能解析，但会以退出码 2 拒绝；依赖轨迹的测试在运行期自报跳过。
+option(ENABLE_TRACE "Compile the stage and commit trace support" ON)
+
 add_library(rv32_core STATIC
     src/riscvsim/core/core.c
     src/riscvsim/core/fetch.c
@@ -29,9 +33,14 @@ add_library(rv32_core STATIC
     src/riscvsim/core/decode.c
     src/riscvsim/core/execute.c
     src/riscvsim/core/csr.c
-    src/riscvsim/utils/trace.c
 )
+if(ENABLE_TRACE)
+    target_sources(rv32_core PRIVATE src/riscvsim/utils/trace.c)
+endif()
 target_include_directories(rv32_core PUBLIC src/riscvsim)
+# 必须用 $<BOOL:> 把 ON/OFF 转成 1/0：直接写 ${ENABLE_TRACE} 会得到
+# -DENABLE_TRACE=ON，而 #if 里的 ON 不是宏、求值为 0，会把功能静默关掉。
+target_compile_definitions(rv32_core PUBLIC ENABLE_TRACE=$<BOOL:${ENABLE_TRACE}>)
 configure_sim_target(rv32_core)
 
 add_executable(sim src/riscvsim/main.c)
@@ -65,6 +74,8 @@ if(BUILD_TESTING)
     # test_cli 只调用系统接口：它测的是 sim 的进程契约，不包含项目头。
     add_executable(test_cli tests/test_cli.c)
     add_dependencies(test_cli sim)
+    # 不链项目库就拿不到 rv32_core 的 PUBLIC 定义，单独传一份。
+    target_compile_definitions(test_cli PRIVATE ENABLE_TRACE=$<BOOL:${ENABLE_TRACE}>)
     configure_sim_target(test_cli)
 
     # 每个测试二进制自带断言与用例计数，CTest 只看退出码。
@@ -80,6 +91,9 @@ if(BUILD_TESTING)
     # 起子进程的用例万一挂住，要在 60 秒内失败，而不是拖到 CTest 的默认超时。
     set_tests_properties(rv32i rv32a csr memory commit loader cli tools_trace tools_spike
         PROPERTIES TIMEOUT 60)
+    # ENABLE_TRACE=OFF 时 test_commit 只打印跳过行，用 SKIP_RETURN_CODE 如实报成
+    # 「跳过」，而不是一条什么都没断言的绿色通过。
+    set_tests_properties(commit PROPERTIES SKIP_RETURN_CODE 77)
 endif()
 
 find_program(CLANG_FORMAT_EXECUTABLE NAMES clang-format)

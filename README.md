@@ -23,6 +23,15 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j
 ```
 
+默认构建带轨迹功能。去掉它以及随之而来的逐拍开销：
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DENABLE_TRACE=OFF
+cmake --build build -j
+```
+
+这两个开关会被该构建拒绝：`--stage-trace`、`--trace-json`。开关的取舍见 [程序装载与提交轨迹](docs/loader-trace.md)。
+
 ### 运行与测试
 
 仓库提交了预编译的 `programs/diff_smoke.elf`，无需交叉工具链：
@@ -42,7 +51,7 @@ mkdir -p out
 python3 tools/trace_view.py out/trace.log -o out/trace.html
 ```
 
-用浏览器打开 `out/trace.html`，查看指令在各阶段的执行情况。
+用浏览器打开 `out/trace.html`，查看指令在各阶段的执行情况。这条路径需要默认构建（`ENABLE_TRACE=ON`）。
 
 镜像可以是 ELF，也可以是裸二进制——裸镜像用 `--base` 指定装载地址。镜像格式、加载地址和停止条件见 [程序装载与提交轨迹](docs/loader-trace.md)。完整参数可通过 `./build/sim --help` 查看。
 

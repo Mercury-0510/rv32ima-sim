@@ -1,3 +1,6 @@
+/* 只在 ENABLE_TRACE=1 时参与编译。关闭时 trace.h 把两个函数定义成宏，本文件
+ * 里的函数定义会展开成非法语句，所以由 CMakeLists.txt 从源列表里整体去掉，
+ * 而不是在本文件里加条件编译。 */
 #include "trace.h"
 #include "../core/core.h"
 #include "../core/cpu_state.h"

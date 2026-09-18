@@ -4,8 +4,22 @@
 #include "core/core.h"
 #include "core/cpu_state.h"
 #include "system/memory.h"
+#include "utils/trace.h"
 #include <inttypes.h>
 #include <string.h>
+
+/* 提交轨迹由 utils/trace.c 产生，ENABLE_TRACE=OFF 时该文件不参与编译，本文件
+ * 只剩一个空跑的 main。守卫必须包住全部内容而不是只包 main：留着静态函数和
+ * 辅助函数不调用会被 -Werror=unused-function / -Wunused-variable 拒绝。 */
+#if !ENABLE_TRACE
+
+int main(void)
+{
+    printf("COMMIT: skipped, this build has ENABLE_TRACE=OFF\n");
+    return 77; /* CTest 的 SKIP_RETURN_CODE，见 CMakeLists.txt */
+}
+
+#else
 
 #define RAM_SIZE 4096u
 #define MAX_EVENTS 16
@@ -210,3 +224,5 @@ int main(void)
     printf("COMMIT: %u directed cases passed\n", cases);
     return 0;
 }
+
+#endif

@@ -1,6 +1,6 @@
 # Python 轨迹工具
 
-工具只依赖 Python 3 标准库。先按 [README](../README.md) 构建模拟器，再在项目根目录运行（示例镜像随仓库提交，无需自行编译）：
+工具只依赖 Python 3 标准库。先按 [README](../README.md) 构建模拟器，再在项目根目录运行（示例镜像随仓库提交，无需自行编译）。本页所有工具都靠轨迹工作，因此需要默认构建；`-DENABLE_TRACE=OFF` 的模拟器会拒绝 `--stage-trace` 和 `--trace-json`。
 
 ```bash
 cmake --build build -j

@@ -67,7 +67,8 @@ def read_trace(path):
         except (ValueError, TypeError, KeyError) as error:
             raise ValueError(f'{path}:事件 {number}: {error}') from error
     if not events:
-        raise ValueError(f'{path}: 没有阶段事件，请开启 core.trace')
+        raise ValueError(f'{path}: 没有阶段事件，请用 --stage-trace 运行模拟器'
+                         f'（构建需 ENABLE_TRACE=ON）')
     return sorted(events, key=lambda e: (e['cycle'], STAGES.index(e['stage'])))
 
 

@@ -6,6 +6,8 @@
 
 需要已构建的模拟器、可执行的 Spike，以及仓库里提交的 `programs/diff_smoke.elf`。**不需要 RISC-V 交叉工具链**——脚本自己解析 ELF 符号表，不用 `nm`。
 
+模拟器必须带轨迹功能构建（默认的 `ENABLE_TRACE=ON`）。差分靠 `--trace-json` 取得被测侧轨迹，`-DENABLE_TRACE=OFF` 的构建会直接拒绝该选项。
+
 Spike 必须带提交日志支持构建：
 
 ```bash
