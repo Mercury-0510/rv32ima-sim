@@ -1,5 +1,5 @@
 #include "core/core.h"
-#include "riscvsim_cpu.h"
+#include "core/cpu_state.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,7 +38,10 @@ static uint32_t jal(unsigned rd, int offset)
 static void setup(const uint32_t *p, size_t n)
 {
     memset(ram, 0, sizeof(ram));
-    in_core_init(&core, &cpu, p, n, BASE, ram, sizeof(ram));
+    CoreSetup core_setup = {.program = p, .count = n, .data = ram,
+                            .data_size = sizeof(ram), .base = BASE, .entry = BASE,
+                            .config = in_core_default_config()};
+    in_core_init(&core, &cpu, &core_setup);
     cases++;
 }
 static void run(void) { in_core_run(&core, 500); }
@@ -49,8 +52,8 @@ static void alu(uint32_t insn, uint32_t a, uint32_t b, uint32_t expected)
     run();
     unsigned latency = (insn & 0x7f) == 0x33 && (insn >> 25) == 1
                            ? (((insn >> 12) & 7) < 4 ? 3 : 32) : 1;
-    CHECK(!cpu.trapped && core.retired == 1 && cpu.clock == latency + 4);
-    CHECK(core.execute_stalls == latency - 1);
+    CHECK(!cpu.trapped && core.stats.retired == 1 && cpu.clock == latency + 4);
+    CHECK(core.stats.execute_stalls == latency - 1);
     CHECK(cpu.regs[3] == expected && cpu.regs[0] == 0);
 }
 static void test_alu(void)
@@ -81,6 +84,8 @@ static void test_alu(void)
 /* Expected values generated using arbitrary-precision integer arithmetic. */
 static void test_m(void)
 {
+    /* 每行保留一组输入及 8 条 M 指令的期望值，便于逐组核对。 */
+    /* clang-format off */
     static const struct { uint32_t a, b, expected[8]; } vectors[] = {
         {0x00000000u, 0x00000000u, {0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0xffffffffu, 0xffffffffu, 0x00000000u, 0x00000000u}},
         {0x00000000u, 0x00000001u, {0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u}},
@@ -183,6 +188,7 @@ static void test_m(void)
         {0xffffffffu, 0xfffffffdu, {0x00000003u, 0x00000000u, 0xffffffffu, 0xfffffffcu, 0x00000000u, 0x00000001u, 0xffffffffu, 0x00000002u}},
         {0xffffffffu, 0xffffffffu, {0x00000001u, 0x00000000u, 0xffffffffu, 0xfffffffeu, 0x00000001u, 0x00000001u, 0x00000000u, 0x00000000u}},
     };
+    /* clang-format on */
     for (size_t j = 0; j < sizeof(vectors)/sizeof(vectors[0]); ++j)
         for (unsigned f = 0; f < 8; ++f)
             alu(reg(f,1), vectors[j].a, vectors[j].b, vectors[j].expected[f]);
@@ -193,14 +199,14 @@ static void test_m(void)
                     (reg(4,1) & ~(31u << 7)) | (1u << 7),
                     store(2,1,0,0)};
     setup(p,6); run();
-    CHECK(!cpu.trapped && core.retired == 6);
+    CHECK(!cpu.trapped && core.stats.retired == 6);
     CHECK(cpu.regs[3] == 84 && cpu.regs[1] == 21 && ram[0] == 21);
-    CHECK(core.stalls == 8 && core.execute_stalls == 33 && cpu.clock == 51);
+    CHECK(core.stats.stalls == 8 && core.stats.execute_stalls == 33 && cpu.clock == 51);
     for (unsigned f = 0; f < 8; ++f) {
         uint32_t z[] = {reg(f,1) & ~(31u << 7), imm(0x13,3,0,0,9)};
         setup(z,2); cpu.regs[1] = 0x80000000u; cpu.regs[2] = 0; run();
         CHECK(!cpu.trapped && cpu.regs[0] == 0 && cpu.regs[3] == 9);
-        CHECK(core.retired == 2 && core.stalls == 0);
+        CHECK(core.stats.retired == 2 && core.stats.stalls == 0);
     }
 }
 
@@ -229,12 +235,12 @@ static void test_hazards(void)
                     store(2,1,0,0), imm(3,2,2,0,0), reg(0,0)};
     setup(p,5); run();
     CHECK(!cpu.trapped && cpu.regs[1]==8 && cpu.regs[2]==8 && cpu.regs[3]==16);
-    CHECK(core.stalls == 6 && cpu.clock == 15 && core.retired == 5);
+    CHECK(core.stats.stalls == 6 && cpu.clock == 15 && core.stats.retired == 5);
     uint32_t z[] = {imm(0x13,0,0,0,5), imm(0x13,1,0,0,3)};
-    setup(z,2); run(); CHECK(cpu.regs[0]==0 && cpu.regs[1]==3 && core.stalls==0);
+    setup(z,2); run(); CHECK(cpu.regs[0]==0 && cpu.regs[1]==3 && core.stats.stalls==0);
     uint32_t independent[] = {imm(0x13,1,0,0,1),imm(0x13,2,0,0,2),imm(0x13,3,0,0,3)};
     setup(independent,3); in_core_run(&core,2); CHECK(cpu.clock==2);
-    run(); CHECK(cpu.clock==7 && core.retired==3);
+    run(); CHECK(cpu.clock==7 && core.stats.retired==3);
     run(); CHECK(cpu.clock==7);
     setup(NULL,0); run(); CHECK(cpu.clock==0);
 }
@@ -251,24 +257,24 @@ static void test_control(void)
         if (f[j]==6) { cpu.regs[1]=taken ? 1 : 0xffffffff; cpu.regs[2]=2; }
         if (f[j]==7) { cpu.regs[1]=taken ? 0xffffffff : 1; cpu.regs[2]=2; }
         run(); CHECK(!cpu.trapped && cpu.regs[4]==7);
-        CHECK(cpu.regs[3]==(taken?0u:9u) && core.flushes==taken);
-        CHECK(core.retired==(taken?2u:3u));
+        CHECK(cpu.regs[3]==(taken?0u:9u) && core.stats.flushes==taken);
+        CHECK(core.stats.retired==(taken?2u:3u));
     }
     uint32_t p[] = {jal(1,8), 0xffffffff, imm(0x13,3,0,1,0)};
-    setup(p,3); run(); CHECK(!cpu.trapped && cpu.regs[3]==BASE+4 && core.retired==2);
+    setup(p,3); run(); CHECK(!cpu.trapped && cpu.regs[3]==BASE+4 && core.stats.retired==2);
     uint32_t q[] = {imm(0x67,1,0,1,0),store(2,2,0,0),imm(0x13,3,0,1,0)};
     setup(q,3); cpu.regs[1]=BASE+9; cpu.regs[2]=42; run();
     CHECK(!cpu.trapped && cpu.regs[3]==BASE+4 && ram[0]==0);
     uint32_t loop[] = {imm(0x13,1,0,1,-1),branch(1,-4)};
     setup(loop,2); cpu.regs[1]=3; run();
-    CHECK(!cpu.trapped && cpu.regs[1]==0 && core.retired==6 && core.flushes==2);
+    CHECK(!cpu.trapped && cpu.regs[1]==0 && core.stats.retired==6 && core.stats.flushes==2);
 }
 static void fault(uint32_t instruction, uint32_t cause, uint32_t value)
 {
     uint32_t p[] = {imm(0x13,5,0,0,7), instruction, store(2,5,0,0),imm(0x13,6,0,0,9)};
     setup(p,4); run();
     CHECK(cpu.trapped && cpu.trap_cause==cause && cpu.trap_pc==BASE+4);
-    CHECK(cpu.trap_value==value && core.retired==1 && cpu.regs[5]==7);
+    CHECK(cpu.trap_value==value && core.stats.retired==1 && cpu.regs[5]==7);
     CHECK(ram[0]==0 && cpu.regs[6]==0);
 }
 static void test_faults(void)
@@ -286,8 +292,8 @@ static void test_faults(void)
     fault(jal(3,2),0,BASE+6);
     uint32_t p[]={branch(1,2)}; setup(p,1); run(); CHECK(!cpu.trapped);
     uint32_t q[]={jal(0,12)}; setup(q,1); run();
-    CHECK(cpu.trapped && cpu.trap_cause==1 && cpu.trap_pc==BASE+12 && core.retired==1);
-    uint32_t fence=0x0ff0000f; setup(&fence,1); run(); CHECK(!cpu.trapped && core.retired==1);
+    CHECK(cpu.trapped && cpu.trap_cause==1 && cpu.trap_pc==BASE+12 && core.stats.retired==1);
+    uint32_t fence=0x0ff0000f; setup(&fence,1); run(); CHECK(!cpu.trapped && core.stats.retired==1);
 }
 static void test_m_timing(void)
 {
@@ -300,7 +306,7 @@ static void test_m_timing(void)
             setup(p, 3);
             CHECK(!in_core_set_m_latency(&core, 0, 3));
             CHECK(!in_core_set_m_latency(&core, 3, 0));
-            CHECK(core.mul_cycles == 3 && core.div_cycles == 32);
+            CHECK(core.config.mul_cycles == 3 && core.config.div_cycles == 32);
             CHECK(in_core_set_m_latency(&core, latency, latency));
             cpu.regs[1] = 21; cpu.regs[2] = 4;
             in_core_run(&core, 2); /* M 在 EX，后继在 ID。 */
@@ -313,17 +319,17 @@ static void test_m_timing(void)
                 CHECK(core.decode.has_data && core.decode.latch.pc == BASE + 4);
                 CHECK(core.fetch_pc == fetch_pc && !core.memory.has_data);
                 CHECK(core.execute.latch.ex_cycles_left == latency - wait - 1);
-                CHECK(cpu.regs[3] == 0 && core.retired == 0);
+                CHECK(cpu.regs[3] == 0 && core.stats.retired == 0);
             }
             in_core_run(&core, 1); /* EX 结果就绪，但不能提前写 rd。 */
             CHECK(!core.execute_stalled && core.memory.has_data && cpu.regs[3] == 0);
             in_core_run(&core, 1); /* MEM */
-            CHECK(cpu.regs[3] == 0 && core.retired == 0);
+            CHECK(cpu.regs[3] == 0 && core.stats.retired == 0);
             in_core_run(&core, 1); /* WB */
-            CHECK(cpu.regs[3] == (kind ? 5u : 84u) && core.retired == 1);
+            CHECK(cpu.regs[3] == (kind ? 5u : 84u) && core.stats.retired == 1);
             run();
-            CHECK(cpu.clock == latency + 6 && core.retired == 3);
-            CHECK(core.execute_stalls == latency - 1 && core.stalls == 0);
+            CHECK(cpu.clock == latency + 6 && core.stats.retired == 3);
+            CHECK(core.stats.execute_stalls == latency - 1 && core.stats.stalls == 0);
             CHECK(cpu.regs[4] == 7 && cpu.regs[5] == 9);
         }
 
@@ -338,13 +344,13 @@ static void test_m_timing(void)
     for (unsigned i = 0; i < 2; ++i)
     {
         in_core_run(&core, 1);
-        CHECK(core.memory_stalled && !core.execute_stalled && core.execute_stalls == 0);
+        CHECK(core.memory_stalled && !core.execute_stalled && core.stats.execute_stalls == 0);
         CHECK(!core.execute.latch.m_result_ready && core.execute.latch.ex_cycles_left == 0);
-        CHECK(core.retired == 1); /* 较老 SW 只退休一次。 */
+        CHECK(core.stats.retired == 1); /* 较老 SW 只退休一次。 */
     }
     run();
-    CHECK(cpu.clock == 19 && core.retired == 5 && core.execute_stalls == 8);
-    CHECK(core.memory_stalls == 2 && core.stalls == 0);
+    CHECK(cpu.clock == 19 && core.stats.retired == 5 && core.stats.execute_stalls == 8);
+    CHECK(core.stats.memory_stalls == 2 && core.stats.stalls == 0);
     CHECK(cpu.regs[3] == 84 && cpu.regs[5] == 4 && cpu.regs[6] == 8 && ram[0] == 8);
     uint64_t total = cpu.clock;
     for (uint64_t split = 0; split <= total; ++split)
@@ -354,41 +360,69 @@ static void test_m_timing(void)
         cpu.regs[1] = 21; cpu.regs[2] = 4;
         in_core_run(&core, split);
         run();
-        CHECK(cpu.clock == total && core.retired == 5 && core.execute_stalls == 8);
+        CHECK(cpu.clock == total && core.stats.retired == 5 && core.stats.execute_stalls == 8);
         CHECK(cpu.regs[3] == 84 && cpu.regs[5] == 4 && cpu.regs[6] == 8 && ram[0] == 8);
     }
 
     /* 更老的 MEM 异常取消尚未启动的 DIV。 */
     uint32_t bad[] = {imm(3,8,2,0,1), reg(4,1)};
     setup(bad, 2); run();
-    CHECK(cpu.trapped && cpu.trap_cause == 4 && core.retired == 0);
-    CHECK(core.execute_stalls == 0 && !core.execute.has_data && cpu.regs[3] == 0);
+    CHECK(cpu.trapped && cpu.trap_cause == 4 && core.stats.retired == 0);
+    CHECK(core.stats.execute_stalls == 0 && !core.execute.has_data && cpu.regs[3] == 0);
 
     /* 更年轻的 ECALL 只能在 DIV 完成后到达 WB。 */
     uint32_t younger[] = {reg(4,1), 0x00000073, store(2,2,0,0)};
     setup(younger, 3); cpu.regs[1] = 21; cpu.regs[2] = 4;
     run();
-    CHECK(cpu.trapped && core.retired == 1 && cpu.regs[3] == 5 && ram[0] == 0);
-    CHECK(core.execute_stalls == 31 && cpu.trap_pc == BASE + 4);
+    CHECK(cpu.trapped && core.stats.retired == 1 && cpu.regs[3] == 5 && ram[0] == 0);
+    CHECK(core.stats.execute_stalls == 31 && cpu.trap_pc == BASE + 4);
 
     uint32_t wrong_path[] = {jal(0,8), reg(4,1), imm(0x13,4,0,0,9)};
     setup(wrong_path, 3); run();
-    CHECK(!cpu.trapped && core.retired == 2 && core.execute_stalls == 0 && cpu.regs[4] == 9);
+    CHECK(!cpu.trapped && core.stats.retired == 2 && core.stats.execute_stalls == 0 && cpu.regs[4] == 9);
 
     /* DIV 之后的跳转在 EX 等待期间不能提前重定向或执行错误路径 store。 */
     uint32_t jump[] = {reg(4,1), jal(0,8), store(2,2,0,0), imm(0x13,4,0,0,9)};
     setup(jump, 4); cpu.regs[1] = 21; cpu.regs[2] = 4;
     in_core_run(&core, 10);
-    CHECK(core.flushes == 0 && cpu.regs[4] == 0 && core.retired == 0);
+    CHECK(core.stats.flushes == 0 && cpu.regs[4] == 0 && core.stats.retired == 0);
     run();
-    CHECK(core.flushes == 1 && core.retired == 3 && cpu.regs[3] == 5 && cpu.regs[4] == 9);
-    CHECK(ram[0] == 0 && core.execute_stalls == 31);
+    CHECK(core.stats.flushes == 1 && core.stats.retired == 3 && cpu.regs[3] == 5 && cpu.regs[4] == 9);
+    CHECK(ram[0] == 0 && core.stats.execute_stalls == 31);
+}
+
+static void test_run_configuration(void)
+{
+    uint32_t p[] = {reg(0, 1), store(2, 2, 0, 0), imm(0x13, 4, 0, 0, 9)};
+    setup(p, 3);
+    CHECK(in_core_set_m_latency(&core, 2, 5));
+    core.config.stop_pc = BASE;
+    core.config.stop_pc_valid = 1;
+    cpu.regs[1] = 21;
+    cpu.regs[2] = 4;
+    run();
+    /* 停止 PC 在 WB 生效：M 指令已退休，年轻 store 不能写 RAM。 */
+    CHECK(core.halted && !cpu.trapped && cpu.clock == 6);
+    CHECK(core.stats.retired == 1 && core.stats.execute_stalls == 1);
+    CHECK(cpu.regs[3] == 84 && cpu.regs[4] == 0 && ram[0] == 0);
+    run();
+    CHECK(cpu.clock == 6 && core.stats.retired == 1 && ram[0] == 0);
+
+    /* 复用同一核心时重新初始化，恢复默认延迟并清除停止条件和统计。 */
+    setup(p, 3);
+    cpu.regs[1] = 21;
+    cpu.regs[2] = 4;
+    run();
+    CHECK(!cpu.trapped && cpu.clock == 9);
+    CHECK(core.stats.retired == 3 && core.stats.execute_stalls == 2);
+    CHECK(cpu.regs[3] == 84 && cpu.regs[4] == 9 && ram[0] == 4);
 }
 
 int main(void)
 {
     test_alu(); test_m(); test_memory(); test_hazards(); test_control(); test_faults();
     test_m_timing();
+    test_run_configuration();
     printf("RV32IM: %u directed cases passed\n", cases);
     return 0;
 }

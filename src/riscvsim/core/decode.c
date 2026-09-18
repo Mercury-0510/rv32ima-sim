@@ -1,5 +1,5 @@
-#include "core.h"
-#include "../riscvsim_cpu.h"
+#include "core_internal.h"
+#include "cpu_state.h"
 
 /* 无符号运算实现符号扩展，避免依赖宿主机的有符号右移。 */
 static uint32_t sext(uint32_t value, unsigned bits)
@@ -146,7 +146,7 @@ void in_core_decode(INCore *core)
          (use2 && (pending(core->execute, l->rs2) || pending(core->memory, l->rs2)))))
     {
         core->stalled = 1;
-        core->stalls++;
+        core->stats.stalls++;
         core->next_decode = core->decode; /* 保持 ID，向 EX 插入气泡 */
         return;
     }

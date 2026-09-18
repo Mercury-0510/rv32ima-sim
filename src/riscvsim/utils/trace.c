@@ -1,5 +1,7 @@
 #include "trace.h"
-#include "../riscvsim_cpu.h"
+#include "../core/core.h"
+#include "../core/cpu_state.h"
+#include "../core/opcodes.h"
 #include <inttypes.h>
 #include <stdio.h>
 
@@ -28,7 +30,7 @@ void trace_commit(const INCore *core, int trap)
         "\"mem_wdata\":\"0x%08" PRIx32 "\",\"trap\":%s,\"cause\":%u,"
         "\"tval\":\"0x%08" PRIx32 "\"}\n",
         trap ? "trap" : "commit", core->simcpu->clock + 1,
-        core->retired, l->pc, l->insn, wen, wen ? l->rd : 0,
+        core->stats.retired, l->pc, l->insn, wen, wen ? l->rd : 0,
         wen ? l->result : 0, (op == OPCODE_LOAD || op == OPCODE_STORE) ? l->mem_addr : 0,
         mask, data, trap ? "true" : "false",
         trap ? core->simcpu->trap_cause : 0, trap ? l->tval : 0);

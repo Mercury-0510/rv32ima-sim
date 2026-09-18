@@ -32,23 +32,23 @@ class ToolsTest(unittest.TestCase):
         jsonl = self.directory/'trace.jsonl'
         self.cli('trace.py', self.log, '-o', csv)
         self.cli('trace.py', csv, '-o', jsonl)
-        self.cli('diff.py', '--actual', jsonl, '--expected', self.log)
+        self.cli('trace_diff.py', '--actual', jsonl, '--expected', self.log)
         self.assertEqual(len(jsonl.read_text().splitlines()), 2)
 
     def test_difference_and_wb_timing(self):
         other = self.directory/'other.log'
         other.write_text(self.log.read_text().replace('cycle=5','cycle=6'))
-        result = self.cli('diff.py','--actual',other,'--expected',self.log,code=1)
+        result = self.cli('trace_diff.py','--actual',other,'--expected',self.log,code=1)
         self.assertIn('第 2 个事件',result.stdout)
-        self.cli('diff.py','--actual',other,'--expected',self.log,'--mode','wb')
+        self.cli('trace_diff.py','--actual',other,'--expected',self.log,'--mode','wb')
         other.write_text(other.read_text().replace('00000013','00100093'))
-        self.cli('diff.py','--actual',other,'--expected',self.log,'--mode','wb',code=1)
+        self.cli('trace_diff.py','--actual',other,'--expected',self.log,'--mode','wb',code=1)
 
     def test_truncated(self):
         other = self.directory/'short.log'
         other.write_text(self.log.read_text().splitlines()[0]+'\n')
-        self.cli('diff.py','--actual',other,'--expected',self.log,code=1)
-        self.cli('diff.py','--actual',other,'--expected',self.log,'--mode','wb',code=2)
+        self.cli('trace_diff.py','--actual',other,'--expected',self.log,code=1)
+        self.cli('trace_diff.py','--actual',other,'--expected',self.log,'--mode','wb',code=2)
 
     def test_invalid(self):
         for text in ('', 'garbage\n', 'cycle=0 IF pc=0x0 insn=0x13\n',
@@ -61,13 +61,13 @@ class ToolsTest(unittest.TestCase):
 
     def test_html_range(self):
         output=self.directory/'nested'/'view.html'
-        self.cli('view_trace.py',self.log,'-o',output,'--start',5,'--end',5)
+        self.cli('trace_view.py',self.log,'-o',output,'--start',5,'--end',5)
         text=output.read_text()
         self.assertIn('<th>5</th>',text)
         self.assertNotIn('<th>1</th>',text)
         self.assertIn('0x80000000',text)
         self.assertIn('addi x0, x0, 0', text)
-        self.cli('view_trace.py',self.log,'--start',7,code=2)
+        self.cli('trace_view.py',self.log,'--start',7,code=2)
 
     def test_disassembly(self):
         vectors = {
@@ -112,7 +112,7 @@ class ToolsTest(unittest.TestCase):
         self.log.write_text('cycle=1 IF pc=0x80000000 insn=0x0620a1af\n'
                             'cycle=2 ID pc=0x80000000 insn=0x0620a1af\n')
         output = self.directory / 'atomic.html'
-        self.cli('view_trace.py', self.log, '-o', output)
+        self.cli('trace_view.py', self.log, '-o', output)
         text = output.read_text()
         self.assertIn('<strong>amoadd.w.aqrl x3, x2, (x1)</strong>', text)
         self.assertIn('机器码: 0x0620a1af', text)

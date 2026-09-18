@@ -2,7 +2,7 @@
 #define RISCVSIM_CSR_H
 
 #include <stdint.h>
-#include "../riscvsim_cpu.h"
+#include "cpu_state.h"
 
 /* 特权级编码，与 mstatus.MPP 字段一致。 */
 #define PRIV_U 0u

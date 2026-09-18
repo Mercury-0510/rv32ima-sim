@@ -1,5 +1,5 @@
-#ifndef RISCVSIM_MACROS_H
-#define RISCVSIM_MACROS_H
+#ifndef RISCVSIM_OPCODES_H
+#define RISCVSIM_OPCODES_H
 
 #define NUM_INT_REG 32
 

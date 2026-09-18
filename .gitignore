@@ -5,6 +5,7 @@
 /build/
 /build-*/
 /out/
+/programs/*.o
 
 # Python caches
 __pycache__/
@@ -15,6 +16,7 @@ __pycache__/
 /.idea/
 /.agents/
 /.codex/
+/.claude/
 
 # Temporary files
 *.swp

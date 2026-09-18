@@ -1,0 +1,30 @@
+name: Build and test
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Configure
+        run: >-
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+          -DPython3_EXECUTABLE="$(command -v python)"
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build -R '^regression$' --output-on-failure
+      # 逐字执行 README 里的示例命令，确保文档中的用法始终可用。
+      # 也顺带检出 programs/diff_smoke.elf 是否与 diff_smoke.S 脱节。
+      - name: Run the documented example
+        run: |
+          output=$(./build/sim programs/diff_smoke.elf --stop-pc test_done 2>&1)
+          echo "$output"
+          grep -q 'retired=33 status=complete' <<< "$output"

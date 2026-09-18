@@ -1,5 +1,5 @@
-#ifndef RISCVSIM_CPU_H
-#define RISCVSIM_CPU_H
+#ifndef RISCVSIM_CPU_STATE_H
+#define RISCVSIM_CPU_STATE_H
 
 #include <stdint.h>
 
